@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>PocketTrae — Mobile</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #0f1419;
+      color: #e7ecf1;
+      min-height: 100vh;
+      padding: 16px;
+    }
+    .header {
+      text-align: center;
+      margin-bottom: 20px;
+      padding-top: 8px;
+    }
+    .header h1 { margin: 0; font-size: 1.1rem; }
+    .header p { margin: 6px 0 0; color: #8b98a5; font-size: 0.85rem; }
+    .sub { color: #8b98a5; text-align: center; margin-bottom: 16px; font-size: 0.85rem; }
+    .empty {
+      text-align: center;
+      color: #8b98a5;
+      padding: 48px 16px;
+    }
+    .card {
+      background: #161b22;
+      border: 1px solid #2f3336;
+      border-radius: 16px;
+      padding: 20px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+      margin-bottom: 16px;
+    }
+    .type {
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #1d9bf0;
+      margin-bottom: 8px;
+    }
+    .title { font-size: 1.2rem; font-weight: 700; margin-bottom: 10px; line-height: 1.35; }
+    .body { color: #8b98a5; margin-bottom: 16px; line-height: 1.5; }
+    .status-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 16px;
+      font-size: 0.9rem;
+      color: #8b98a5;
+    }
+    .badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .badge.pending { background: #3d2e00; color: #ffd666; }
+    .badge.approved { background: #0f3d2e; color: #6ee7a8; }
+    .badge.rejected { background: #3d1515; color: #f87171; }
+    label {
+      display: block;
+      font-size: 0.85rem;
+      color: #8b98a5;
+      margin-bottom: 6px;
+    }
+    textarea {
+      width: 100%;
+      min-height: 72px;
+      border-radius: 10px;
+      border: 1px solid #2f3336;
+      background: #0f1419;
+      color: #e7ecf1;
+      padding: 12px;
+      font: inherit;
+      resize: vertical;
+      margin-bottom: 16px;
+    }
+    .actions { display: flex; gap: 10px; margin-bottom: 16px; }
+    button {
+      flex: 1;
+      border: none;
+      border-radius: 10px;
+      padding: 14px 12px;
+      font-size: 1rem;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .approve { background: #00ba7c; color: #fff; }
+    .reject { background: #2f3336; color: #e7ecf1; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .conn {
+      text-align: center;
+      margin-top: 16px;
+      font-size: 0.8rem;
+      color: #8b98a5;
+    }
+    .conn.live { color: #6ee7a8; }
+    .conn.error { color: #f87171; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>PocketTrae</h1>
+    <p>Mobile Action Card</p>
+  </div>
+
+  <p class="sub">Mobile Workflow</p>
+
+  <div id="content">
+    <div class="empty">Waiting for an action card from desktop…</div>
+  </div>
+
+  <div id="conn" class="conn">Connecting…</div>
+
+  <script type="module">
+    import { CARD_STATUS } from '/shared/actionCard.js?v=3';
+
+    const content = document.getElementById('content');
+    const conn = document.getElementById('conn');
+
+    async function respond(actionId) {
+      const noteEl = document.getElementById('noteInput');
+      const note = noteEl ? noteEl.value : '';
+
+      try {
+        const res = await fetch('/respond', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ actionId, note, respondedBy: 'mobile-web' }),
+        });
+        if (!res.ok) throw new Error('Failed');
+      } catch {
+        conn.textContent = 'Failed to send response';
+        conn.className = 'conn error';
+      }
+    }
+
+    // Track current card state for rendering
+    let currentCardState = null;
+
+    function hasCardStateChanged(card) {
+      if (!card && !currentCardState) return false;
+      if (!card || !currentCardState) return true;
+      return (
+        card.id !== currentCardState.id ||
+        card.status !== currentCardState.status ||
+        card.respondedAt !== currentCardState.respondedAt
+      );
+    }
+
+    function render(card) {
+      console.log('[Mobile] Render called:', card ? { id: card.id, status: card.status } : null);
+      
+      // Skip re-render if state hasn't changed
+      if (!hasCardStateChanged(card)) {
+        console.log('[Mobile] Skipping render - same card state');
+        return;
+      }
+      
+      // Update tracked state
+      currentCardState = card ? { 
+        id: card.id, 
+        status: card.status, 
+        respondedAt: card.respondedAt 
+      } : null;
+      
+      if (!card) {
+        content.innerHTML = '<div class="empty">Waiting for an action card from desktop…</div>';
+        return;
+      }
+
+      const isPending = card.status === CARD_STATUS.PENDING;
+
+      if (!isPending) {
+        const label = card.status === CARD_STATUS.APPROVED ? 'Approved' : 'Rejected';
+        content.innerHTML = `
+          <div class="card">
+            <div class="type">${card.type}</div>
+            <div class="title">${card.title}</div>
+            <div class="done" style="color: ${card.status === CARD_STATUS.APPROVED ? '#6ee7a8' : '#f87171'}; font-weight: 700; margin-top: 12px;">
+              ${label}${card.note ? `: "${card.note}"` : ''}
+            </div>
+            ${card.respondedBy ? `<div style="margin-top: 8px; font-size: 0.85rem; color: #8b98a5;">by ${card.respondedBy}</div>` : ''}
+          </div>
+        `;
+        return;
+      }
+
+      content.innerHTML = `
+        <div class="card">
+          <div class="type">${card.type}</div>
+          <div class="title">${card.title}</div>
+          <div class="body">${card.body}</div>
+          <div class="status-row">Status: <span class="badge ${card.status}">${card.status}</span></div>
+        </div>
+        <label for="noteInput">Optional note</label>
+        <textarea id="noteInput" placeholder="Ship it."></textarea>
+        <div class="actions">
+          <button class="reject" data-action="reject">Reject</button>
+          <button class="approve" data-action="approve">Approve</button>
+        </div>
+      `;
+
+      content.querySelector('[data-action="approve"]').addEventListener('click', () => respond('approve'));
+      content.querySelector('[data-action="reject"]').addEventListener('click', () => respond('reject'));
+    }
+
+    // SSE connection - GET /events
+    const source = new EventSource('/events');
+    source.onmessage = (event) => {
+      const { card } = JSON.parse(event.data);
+      render(card);
+    };
+    source.onopen = () => {
+      conn.textContent = 'Connected via SSE';
+      conn.className = 'conn live';
+    };
+    source.onerror = () => {
+      conn.textContent = 'SSE disconnected';
+      conn.className = 'conn error';
+    };
+
+    // Initial state fetch - GET /state
+    fetch('/state')
+      .then((r) => r.json())
+      .then(({ card }) => render(card))
+      .catch(() => {
+        conn.textContent = 'Could not reach relay';
+        conn.className = 'conn error';
+      });
+  </script>
+</body>
+</html>

@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PocketTrae — Desktop</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #0f1419;
+      color: #e7ecf1;
+      min-height: 100vh;
+    }
+    .wrap { max-width: 720px; margin: 0 auto; padding: 32px 20px; }
+    h1 { margin: 0 0 8px; font-size: 1.5rem; }
+    .sub { color: #8b98a5; margin-bottom: 24px; }
+    .toolbar { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 24px; }
+    button {
+      border: none;
+      border-radius: 8px;
+      padding: 10px 16px;
+      font-size: 0.95rem;
+      cursor: pointer;
+      font-weight: 600;
+      transition: opacity 0.2s;
+    }
+    button:hover { opacity: 0.9; }
+    button:active { transform: scale(0.98); }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .primary { background: #1d9bf0; color: #fff; }
+    .secondary { background: #2f3336; color: #e7ecf1; }
+    .panel {
+      background: #161b22;
+      border: 1px solid #2f3336;
+      border-radius: 12px;
+      padding: 20px;
+    }
+    .status-line {
+      font-size: 1.25rem;
+      font-weight: 700;
+      margin-bottom: 12px;
+      line-height: 1.4;
+    }
+    .meta { color: #8b98a5; font-size: 0.9rem; margin-top: 8px; }
+    .badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .badge.pending { background: #3d2e00; color: #ffd666; }
+    .badge.approved { background: #0f3d2e; color: #6ee7a8; }
+    .badge.rejected { background: #3d1515; color: #f87171; }
+    .badge.none { background: #2f3336; color: #8b98a5; }
+    .conn { margin-top: 16px; font-size: 0.85rem; color: #8b98a5; }
+    .conn.live { color: #6ee7a8; }
+    .conn.error { color: #f87171; }
+    .note {
+      margin-top: 12px;
+      padding: 12px;
+      background: #0f1419;
+      border-radius: 8px;
+      border-left: 3px solid #1d9bf0;
+    }
+    .responded { margin-top: 12px; font-size: 0.85rem; color: #8b98a5; }
+    .debug-info { 
+      margin-top: 12px; 
+      padding: 8px; 
+      background: #2f3336; 
+      border-radius: 4px; 
+      font-family: monospace; 
+      font-size: 0.8rem;
+      color: #8b98a5;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>PocketTrae</h1>
+    <p class="sub">Desktop Workflow</p>
+
+    <div class="toolbar">
+      <button id="emitBtn" class="primary">Emit DeployApproval</button>
+      <button id="resetBtn" class="secondary">Reset demo</button>
+      <button id="fallbackBtn" class="secondary">Simulate mobile approval (local)</button>
+    </div>
+
+    <div class="panel">
+      <div id="statusLine" class="status-line">No active action card.</div>
+      <div id="badge" class="badge none">idle</div>
+      <div id="body" class="meta"></div>
+      <div id="noteBlock" class="note" hidden></div>
+      <div id="respondedBy" class="responded"></div>
+      <div id="debugInfo" class="debug-info" hidden></div>
+    </div>
+
+    <div id="conn" class="conn">Connecting to relay…</div>
+  </div>
+
+  <script type="module">
+    // Module import with error handling
+    let CARD_STATUS, getDesktopStatusLine;
+    try {
+      const module = await import('/shared/actionCard.js?v=5');
+      CARD_STATUS = module.CARD_STATUS;
+      getDesktopStatusLine = module.getDesktopStatusLine;
+      console.log('✅ Module loaded successfully');
+    } catch (err) {
+      console.error('❌ Failed to load module:', err);
+      document.getElementById('conn').textContent = 'Failed to load app module';
+      document.getElementById('conn').className = 'conn error';
+      throw err;
+    }
+
+    // DOM elements
+    const statusLine = document.getElementById('statusLine');
+    const badge = document.getElementById('badge');
+    const body = document.getElementById('body');
+    const noteBlock = document.getElementById('noteBlock');
+    const respondedBy = document.getElementById('respondedBy');
+    const debugInfo = document.getElementById('debugInfo');
+    const conn = document.getElementById('conn');
+
+    // Debug helper
+    function showDebug(msg) {
+      console.log('[DEBUG]', msg);
+      debugInfo.hidden = false;
+      debugInfo.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+    }
+
+    // Render function
+    function render(card) {
+      showDebug(`Rendering card: ${card ? card.id : 'null'}`);
+      
+      if (!card) {
+        statusLine.textContent = 'No active action card.';
+        badge.textContent = 'idle';
+        badge.className = 'badge none';
+        body.textContent = '';
+        noteBlock.hidden = true;
+        respondedBy.textContent = '';
+        return;
+      }
+
+      statusLine.textContent = getDesktopStatusLine(card);
+      badge.textContent = card.status;
+      badge.className = `badge ${card.status}`;
+      body.textContent = card.body;
+
+      if (card.note) {
+        noteBlock.hidden = false;
+        noteBlock.textContent = `Note: "${card.note}"`;
+      } else {
+        noteBlock.hidden = true;
+      }
+
+      respondedBy.textContent = card.respondedBy
+        ? `Responded by ${card.respondedBy}${card.respondedAt ? ` at ${new Date(card.respondedAt).toLocaleTimeString()}` : ''}`
+        : '';
+    }
+
+    // API helper
+    async function postJson(path, payload) {
+      showDebug(`POST ${path}`);
+      const res = await fetch(path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: payload ? JSON.stringify(payload) : undefined,
+      });
+      if (!res.ok) throw new Error(`Request failed: ${path} status ${res.status}`);
+      return res.json();
+    }
+
+    // Button handlers with explicit logging
+    const emitBtn = document.getElementById('emitBtn');
+    const resetBtn = document.getElementById('resetBtn');
+
+    console.log('🔍 Found buttons:', { emitBtn: !!emitBtn, resetBtn: !!resetBtn });
+
+    if (emitBtn) {
+      emitBtn.addEventListener('click', async () => {
+        console.log('🚀 Emit clicked');
+        showDebug('Emit clicked');
+        try {
+          const data = await postJson('/emit');
+          console.log('✅ Emit success:', data);
+          showDebug('Emit success');
+          render(data.card);
+          conn.textContent = 'Live — connected to relay via SSE';
+          conn.className = 'conn live';
+        } catch (err) {
+          console.error('❌ Emit failed:', err);
+          showDebug('Emit failed: ' + err.message);
+          conn.textContent = 'Emit failed — is the server running?';
+          conn.className = 'conn error';
+        }
+      });
+    }
+
+    if (resetBtn) {
+      resetBtn.addEventListener('click', async () => {
+        console.log('🔄 Reset clicked');
+        showDebug('Reset clicked');
+        try {
+          const data = await postJson('/reset');
+          console.log('✅ Reset success:', data);
+          showDebug('Reset success');
+          render(data.card);
+          conn.textContent = 'Live — connected to relay via SSE';
+          conn.className = 'conn live';
+        } catch (err) {
+          console.error('❌ Reset failed:', err);
+          showDebug('Reset failed: ' + err.message);
+          conn.textContent = 'Reset failed — is the server running?';
+          conn.className = 'conn error';
+        }
+      });
+    }
+
+    // Fallback button - Simulate mobile approval locally (no network)
+    const fallbackBtn = document.getElementById('fallbackBtn');
+    if (fallbackBtn) {
+      fallbackBtn.addEventListener('click', () => {
+        console.log('🎭 Fallback clicked');
+        showDebug('Fallback: Simulating mobile approval locally');
+        
+        // Import respondToCard from the shared module for local state update
+        import('/shared/actionCard.js?v=5').then(module => {
+          const { respondToCard } = module;
+          
+          // Get current card from server state via fetch
+          fetch('/state')
+            .then(r => r.json())
+            .then(({ card }) => {
+              if (!card) {
+                showDebug('No active card to simulate');
+                return;
+              }
+              
+              // Simulate mobile approval locally
+              const updatedCard = respondToCard(card, {
+                actionId: 'approve',
+                note: 'Simulated mobile approval (offline)',
+                respondedBy: 'desktop-fallback'
+              });
+              
+              // Render the updated card locally
+              render(updatedCard);
+              showDebug('Fallback: Local approval rendered');
+              conn.textContent = 'Local fallback — server not contacted';
+              conn.className = 'conn';
+            })
+            .catch(err => {
+              console.error('Fallback failed:', err);
+              showDebug('Fallback failed: ' + err.message);
+            });
+        });
+      });
+    }
+
+    // SSE connection with reconnection
+    let eventSource = null;
+    let reconnectAttempts = 0;
+    const maxReconnectDelay = 30000;
+
+    function connectSSE() {
+      console.log('📡 Connecting SSE...');
+      showDebug('Connecting SSE...');
+      
+      eventSource = new EventSource('/events');
+      
+      eventSource.onmessage = (event) => {
+        console.log('📨 SSE message received');
+        try {
+          const { card } = JSON.parse(event.data);
+          render(card);
+        } catch (err) {
+          console.error('Failed to parse SSE message:', err);
+        }
+      };
+      
+      eventSource.onopen = () => {
+        console.log('✅ SSE connected');
+        showDebug('SSE connected');
+        reconnectAttempts = 0;
+        conn.textContent = 'Live — connected to relay via SSE';
+        conn.className = 'conn live';
+      };
+      
+      eventSource.onerror = (err) => {
+        console.error('❌ SSE error:', err);
+        showDebug('SSE error, will reconnect...');
+        conn.textContent = 'SSE disconnected — reconnecting...';
+        conn.className = 'conn error';
+        
+        eventSource.close();
+        
+        // Exponential backoff
+        const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), maxReconnectDelay);
+        reconnectAttempts++;
+        
+        console.log(`🔄 Reconnecting in ${delay}ms (attempt ${reconnectAttempts})`);
+        setTimeout(connectSSE, delay);
+      };
+    }
+
+    // Initial connection
+    connectSSE();
+
+    // Initial state fetch
+    fetch('/state')
+      .then((r) => r.json())
+      .then(({ card }) => {
+        console.log('Initial state:', card);
+        render(card);
+      })
+      .catch((err) => {
+        console.error('Failed to fetch initial state:', err);
+        conn.textContent = 'Could not reach relay — start with npm start';
+        conn.className = 'conn error';
+      });
+
+    console.log('✅ Desktop app initialized');
+  </script>
